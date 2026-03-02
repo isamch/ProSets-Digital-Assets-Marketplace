@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum AssetStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_APPROVAL
+  REJECTED
+}
+
+enum AssetCategory {
+  THREE_D_MODELS
+  CODE_SNIPPETS
+  NOTION_TEMPLATES
+  GRAPHICS
+  AUDIO
+  VIDEO
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+// Models
+model User {
+  id          String   @id @default(cuid())
+  auth0Id     String   @unique // Auth0 user ID
+  email       String   @unique
+  name        String?
+  avatar      String?
+  roles       UserRole[]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  assets      Asset[]  @relation("SellerAssets")
+  orders      Order[]  @relation("BuyerOrders")
+  earnings    Earning[]
+  downloadLogs DownloadLog[]
+
+  @@map("users")
+  @@index([auth0Id])
+  @@index([email])
+}
+
+model Asset {
+  id           String        @id @default(cuid())
+  title        String
+  description  String
+  price        Decimal       @db.Decimal(10, 2)
+  previewUrl   String        // Public S3 URL for preview
+  fileKey      String        // Private S3 key for actual file
+  fileName     String        // Original file name
+  fileSize     Int           // File size in bytes
+  category     AssetCategory
+  status       AssetStatus   @default(PENDING_APPROVAL)
+  tags         String[]      // Array of tags for search
+  downloadCount Int          @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  sellerId     String
+  seller       User          @relation("SellerAssets", fields: [sellerId], references: [id], onDelete: Cascade)
+  orderItems   OrderItem[]
+  earnings     Earning[]
+  downloadLogs DownloadLog[]
+
+  @@map("assets")
+  @@index([sellerId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  orderNumber   String        @unique // Human-readable order number
+  status        OrderStatus   @default(PENDING)
+  totalAmount   Decimal       @db.Decimal(10, 2)
+  stripePaymentIntentId String?
+  paymentStatus PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  buyerId       String
+  buyer         User          @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+  earnings      Earning[]
+  downloadLogs  DownloadLog[]
+
+  @@map("orders")
+  @@index([buyerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([orderNumber])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  quantity    Int      @default(1) // Always 1 for digital assets, but kept for flexibility
+  price       Decimal  @db.Decimal(10, 2) // Price at time of purchase
+  createdAt   DateTime @default(now())
+
+  // Relations
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+  @@index([orderId])
+  @@index([assetId])
+  @@unique([orderId, assetId]) // Prevent duplicate assets in same order
+}
+
+model Earning {
+  id              String   @id @default(cuid())
+  amount          Decimal  @db.Decimal(10, 2)
+  platformFee     Decimal  @db.Decimal(10, 2) // Platform commission
+  sellerEarning   Decimal  @db.Decimal(10, 2) // Amount seller receives
+  stripeTransactionId String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  sellerId        String
+  seller          User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assetId         String
+  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("earnings")
+  @@index([sellerId])
+  @@index([orderId])
+  @@index([assetId])
+  @@index([createdAt])
+}
+
+model DownloadLog {
+  id          String   @id @default(cuid())
+  downloadedAt DateTime @default(now())
+  ipAddress   String?
+  userAgent   String?
+
+  // Relations
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("download_logs")
+  @@index([userId])
+  @@index([assetId])
+  @@index([downloadedAt])
+}

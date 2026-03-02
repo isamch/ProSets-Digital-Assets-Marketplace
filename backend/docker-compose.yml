@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: prosets-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prosets_db
+      POSTGRES_USER: prosets_user
+      POSTGRES_PASSWORD: prosets_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - prosets-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: prosets-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - prosets-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  prosets-network:
+    driver: bridge
